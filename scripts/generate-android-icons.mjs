@@ -53,14 +53,27 @@ def fit_contain(img, size, pad_ratio=0.0):
     canvas.alpha_composite(new, ((size - new.width) // 2, (size - new.height) // 2))
     return canvas
 
-# 自适应图标前景：完整 108dp 画布缩放，中心 66dp 安全区内的贴纸图案不被裁切
+# 图标统一使用「贴纸主视觉」——即从品牌图裁出的方形图案（与启动图同一套裁剪）。
+# 直接缩整张图的话，顶部大标题在 48px 的图标里会糊成一团蓝色斑块，什么也看不清。
+w0, h0 = src.size
+ART_CROP = (0.30, 0.30, 0.78, 0.78)  # left, top, right, bottom（比例）
+art_src = src.crop(
+    (
+        int(w0 * ART_CROP[0]),
+        int(h0 * ART_CROP[1]),
+        int(w0 * ART_CROP[2]),
+        int(h0 * ART_CROP[3]),
+    )
+)
+
+# 自适应图标前景：108dp 画布，图形限制在中心 66dp 安全区内
 def foreground(dp):
-    return fit_contain(src, dp)
+    return fit_contain(art_src, dp, pad_ratio=0.20)
 
 # 传统（Android 7 及以下 / 部分桌面）图标：品牌色底 + 贴纸图案
 def legacy(dp):
     base = Image.new('RGBA', (dp, dp), BRAND + (255,))
-    art = fit_contain(src, dp, pad_ratio=0.10)
+    art = fit_contain(art_src, dp, pad_ratio=0.06)
     base.alpha_composite(art)
     return base
 
@@ -85,24 +98,14 @@ for name, scale in DENSITIES.items():
 
 # Play 商店用 512x512 图标
 playstore = Image.new('RGBA', (512, 512), BRAND + (255,))
-playstore.alpha_composite(fit_contain(src, 512, pad_ratio=0.10))
+playstore.alpha_composite(fit_contain(art_src, 512, pad_ratio=0.06))
 playstore.convert('RGB').save(os.path.join(RES, 'mipmap-xxxhdpi/playstore_icon.png'))
 
 # 启动图主视觉：从品牌图裁出「贴纸主体」（避开顶部文字带），保持方形不变形。
 # 注意：Capacitor 不调用 installSplashScreen()，Theme.SplashScreen 的
 # windowSplashScreenAnimatedIcon 不会生效；实际显示的是 windowBackground。
 # 所以这里只生成一张居中显示的图片资源，背景交给层列表 drawable/splash.xml 的纯色。
-w, h = src.size
-SPLASH_ART_CROP = (0.30, 0.30, 0.78, 0.78)  # left, top, right, bottom（比例）
-splash_art = src.crop(
-    (
-        int(w * SPLASH_ART_CROP[0]),
-        int(h * SPLASH_ART_CROP[1]),
-        int(w * SPLASH_ART_CROP[2]),
-        int(h * SPLASH_ART_CROP[3]),
-    )
-)
-splash_art = splash_art.resize((512, 512), Image.LANCZOS)
+splash_art = art_src.resize((512, 512), Image.LANCZOS)
 nodpi = os.path.join(RES, 'drawable-nodpi')
 os.makedirs(nodpi, exist_ok=True)
 splash_art.save(os.path.join(nodpi, 'splash_art.png'))
