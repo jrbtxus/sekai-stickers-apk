@@ -11,7 +11,7 @@
  *   android/app/src/main/res/mipmap-<density>/ic_launcher_round.png
  *   android/app/src/main/res/mipmap-<density>/ic_launcher_foreground.png
  *   android/app/src/main/res/mipmap-xxxhdpi/playstore_icon.png
- *   android/app/src/main/res/drawable 与 drawable-port/land-<density>/splash.png
+ *   android/app/src/main/res/drawable-nodpi/splash_art.png（启动图主视觉）
  *
  * 依赖 python3 + Pillow（CI 里的 ubuntu runner 自带）。
  */
@@ -88,24 +88,58 @@ playstore = Image.new('RGBA', (512, 512), BRAND + (255,))
 playstore.alpha_composite(fit_contain(src, 512, pad_ratio=0.10))
 playstore.convert('RGB').save(os.path.join(RES, 'mipmap-xxxhdpi/playstore_icon.png'))
 
-# 启动图：Capacitor 模板用 drawable / drawable-port-* / drawable-land-*，
-# 各种尺寸统一成同一张品牌色方图，交给 Android 的 centerCrop 拉伸。
-SPLASH_SIZES = {
-    'drawable': 480,
-    'drawable-port-mdpi': 320, 'drawable-port-hdpi': 480,
-    'drawable-port-xhdpi': 720, 'drawable-port-xxhdpi': 960,
-    'drawable-port-xxxhdpi': 1280,
-    'drawable-land-mdpi': 480, 'drawable-land-hdpi': 800,
-    'drawable-land-xhdpi': 1280, 'drawable-land-xxhdpi': 1600,
-    'drawable-land-xxxhdpi': 1920,
-}
-for folder, px in SPLASH_SIZES.items():
-    d = os.path.join(RES, folder)
-    os.makedirs(d, exist_ok=True)
-    splash = Image.new('RGBA', (px, px), SPLASH_BG + (255,))
-    splash.alpha_composite(fit_contain(src, px, pad_ratio=0.28))
-    splash.convert('RGB').save(os.path.join(d, 'splash.png'))
-print('splash: %d 个尺寸' % len(SPLASH_SIZES))
+# 启动图主视觉：从品牌图裁出「贴纸主体」（避开顶部文字带），保持方形不变形。
+# 注意：Capacitor 不调用 installSplashScreen()，Theme.SplashScreen 的
+# windowSplashScreenAnimatedIcon 不会生效；实际显示的是 windowBackground。
+# 所以这里只生成一张居中显示的图片资源，背景交给层列表 drawable/splash.xml 的纯色。
+w, h = src.size
+SPLASH_ART_CROP = (0.30, 0.30, 0.78, 0.78)  # left, top, right, bottom（比例）
+splash_art = src.crop(
+    (
+        int(w * SPLASH_ART_CROP[0]),
+        int(h * SPLASH_ART_CROP[1]),
+        int(w * SPLASH_ART_CROP[2]),
+        int(h * SPLASH_ART_CROP[3]),
+    )
+)
+splash_art = splash_art.resize((512, 512), Image.LANCZOS)
+nodpi = os.path.join(RES, 'drawable-nodpi')
+os.makedirs(nodpi, exist_ok=True)
+splash_art.save(os.path.join(nodpi, 'splash_art.png'))
+print('drawable-nodpi/splash_art.png 512x512（贴纸主视觉）')
+
+# 启动背景：径向渐变（中心亮粉 → 边缘品牌浅粉），与图内射线气质一致且无硬边界。
+GRAD_SIZE = 512
+grad = Image.new('RGB', (GRAD_SIZE, GRAD_SIZE), SPLASH_BG)
+gd = ImageDraw.Draw(grad)
+maxr = (2 ** 0.5) * GRAD_SIZE / 2
+steps = 180
+for i in range(steps, 0, -1):
+    t = i / steps
+    r = maxr * t
+    col = tuple(round(BRAND[j] + (SPLASH_BG[j] - BRAND[j]) * t) for j in range(3))
+    gd.ellipse(
+        (GRAD_SIZE / 2 - r, GRAD_SIZE / 2 - r, GRAD_SIZE / 2 + r, GRAD_SIZE / 2 + r),
+        fill=col,
+    )
+grad.save(os.path.join(nodpi, 'splash_gradient.png'))
+print('drawable-nodpi/splash_gradient.png %dpx（径向渐变背景）' % GRAD_SIZE)
+
+# 清掉旧方案留下的整屏方图（会导致不同屏幕比例下被裁切/过小）
+STALE_SPLASH_DIRS = [
+    'drawable',
+    'drawable-port-mdpi', 'drawable-port-hdpi', 'drawable-port-xhdpi',
+    'drawable-port-xxhdpi', 'drawable-port-xxxhdpi',
+    'drawable-land-mdpi', 'drawable-land-hdpi', 'drawable-land-xhdpi',
+    'drawable-land-xxhdpi', 'drawable-land-xxxhdpi',
+]
+removed = 0
+for folder in STALE_SPLASH_DIRS:
+    stale = os.path.join(RES, folder, 'splash.png')
+    if os.path.exists(stale):
+        os.remove(stale)
+        removed += 1
+print('清理旧 splash.png: %d 个' % removed)
 `;
 
 execFileSync("python3", ["-c", script], { stdio: "inherit" });

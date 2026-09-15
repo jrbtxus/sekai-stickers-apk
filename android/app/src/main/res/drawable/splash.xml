@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  启动画面（windowBackground）。
+
+  为什么不用整张 1:1 方图当背景：它按原始像素尺寸居中显示，
+  在不同屏幕比例下要么铺不满、要么被裁切（旧方案就是这样把标题切掉了一半）。
+
+  现在的结构：
+    1. 径向渐变铺满全屏（drawable-nodpi/splash_gradient.png，中心亮粉 → 边缘品牌浅粉），
+       任何屏幕比例都不变形、无硬边界；
+    2. 中间叠加固定像素尺寸的贴纸主视觉（drawable-nodpi/splash_art.png）。
+
+  注：Capacitor 不调用 installSplashScreen()，Theme.SplashScreen 的
+  windowSplashScreenAnimatedIcon 等属性不生效，实际显示的就是这个 windowBackground。
+-->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item>
+        <bitmap
+            android:gravity="fill"
+            android:src="@drawable/splash_gradient" />
+    </item>
+    <item android:gravity="center">
+        <bitmap
+            android:gravity="center"
+            android:src="@drawable/splash_art" />
+    </item>
+</layer-list>
