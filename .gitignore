@@ -1,0 +1,25 @@
+# === Web / Node ===
+node_modules/
+dist/
+dist-toy/
+*.local
+.env
+.env.*
+!.env.example
+
+# === 编辑器 / 系统 ===
+.DS_Store
+.idea/
+*.iml
+*.log
+npm-debug.log*
+
+# === Android（android/ 目录本身提交，构建产物与生成物不提交） ===
+# android/.gitignore 已忽略：build/、.gradle/、assets/public、生成的 config
+android/local.properties
+android/.kotlin/
+android/app/release/
+
+# APK 产物
+*.apk
+*.aab

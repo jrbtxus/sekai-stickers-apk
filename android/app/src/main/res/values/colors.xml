@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Capacitor 模板的 styles.xml 引用了这三个颜色，但模板本身没有 colors.xml。
+  取值来自站点主题：theme_color #e4c2c8（浅粉）、background_color #433c3d（深灰）。
+-->
+<resources>
+    <color name="colorPrimary">#E4C2C8</color>
+    <color name="colorPrimaryDark">#433C3D</color>
+    <color name="colorAccent">#F83884</color>
+
+    <!-- 启动图底色，与 scripts/generate-android-icons.mjs 里的 SPLASH_BG 保持一致 -->
+    <color name="splashBackground">#E4C2C8</color>
+</resources>

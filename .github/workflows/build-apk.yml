@@ -1,0 +1,87 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (C) 2026 The 25-ji-code-de Team
+#
+# 云端把 Web 前端（Vite）打包进 Capacitor 的安卓壳，产出可直接安装的 APK。
+#
+# 触发：手动（Actions → Build APK → Run workflow）或推送到 main。
+# 产物：Actions 页面上的 artifact「sekai-stickers-debug-<sha>」，内含 app-debug.apk。
+#
+# 说明：Electron 没有 Android 运行时（Chromium+Node 桌面二进制无法装进 APK），
+# 所以安卓端用 Capacitor（系统 WebView + 原生插件）承载同一份 Web 产物。
+
+name: Build APK
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Assemble debug APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+
+    env:
+      # @25-ji-code-de/sekai-auth 是 github: 依赖：npm 会解析成 ssh://git@github.com/...
+      # runner 上统一改走 https，避免 SSH 端口/密钥问题。
+      GIT_CONFIG_COUNT: "1"
+      GIT_CONFIG_KEY_0: url.https://github.com/.insteadOf
+      GIT_CONFIG_VALUE_0: ssh://git@github.com/
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Set up Android SDK + Gradle cache
+        uses: android-actions/setup-android@v3
+
+      - name: Install npm dependencies
+        run: npm ci --legacy-peer-deps
+
+      - name: Type-check (tsc --noEmit)
+        run: npm run type-check
+
+      - name: Build web bundle for Android + sync into native project
+        run: npm run cap:sync
+
+      - name: Regenerate launcher icons / splash from brand art
+        run: node scripts/generate-android-icons.mjs
+
+      - name: Assemble debug APK
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew --no-daemon assembleDebug
+
+      - name: Collect APK
+        id: collect
+        run: |
+          SHA_SHORT=$(git rev-parse --short HEAD)
+          NAME="sekai-stickers-debug-${SHA_SHORT}"
+          mkdir -p out
+          cp android/app/build/outputs/apk/debug/app-debug.apk "out/${NAME}.apk"
+          ls -lh out/
+          echo "name=${NAME}" >> "$GITHUB_OUTPUT"
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.collect.outputs.name }}
+          path: out/*.apk
+          if-no-files-found: error
+          retention-days: 30

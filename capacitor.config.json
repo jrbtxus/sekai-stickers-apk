@@ -1,0 +1,17 @@
+{
+  "appId": "de.sekai.stickers",
+  "appName": "SEKAI贴纸",
+  "webDir": "dist",
+  "android": {
+    "allowMixedContent": true,
+    "webContentsDebuggingEnabled": true
+  },
+  "server": {
+    "androidScheme": "https"
+  },
+  "plugins": {
+    "SplashScreen": {
+      "launchShowDuration": 300
+    }
+  }
+}

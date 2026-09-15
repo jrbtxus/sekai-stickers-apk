@@ -1,0 +1,268 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 The 25-ji-code-de Team
+
+import {
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  Button,
+  Box,
+  TextField,
+  Typography,
+  LinearProgress,
+  IconButton,
+  Alert,
+  Tabs,
+  Tab,
+} from '@mui/material'
+import { Close, ContentCopy, CloudUpload } from '@mui/icons-material'
+import { useState, useEffect } from 'react'
+import GallerySubmitForm from './GallerySubmitForm'
+import { cropCanvasToContent } from '../utils/cropCanvas'
+import { uploadStorageV2Direct } from '../utils/storageUpload'
+import { isToyBuild, TOY_GALLERY_BLOCKED_REASON } from '../utils/toy'
+
+interface UploadDialogProps {
+  open: boolean
+  onClose: () => void
+  canvas: HTMLCanvasElement | null
+  altText?: string
+  onUploadSuccess?: (url: string) => void
+  characterId?: number
+  customImage?: string | null
+  /** Export scale multiplier (1 / 2 / 3), same as export panel */
+  exportScale?: number
+  /**
+   * Hi-DPI re-render (text stays sharp). Falls back to preview canvas + crop
+   * when not provided.
+   */
+  renderAtScale?: (scale: number) => HTMLCanvasElement | null
+}
+
+function UploadDialog({
+  open,
+  onClose,
+  canvas,
+  altText = '',
+  onUploadSuccess,
+  characterId,
+  customImage,
+  exportScale = 1,
+  renderAtScale,
+}: UploadDialogProps) {
+  const [uploading, setUploading] = useState(false)
+  const [uploadProgress, setUploadProgress] = useState(0)
+  const [uploadedUrl, setUploadedUrl] = useState('')
+  const [error, setError] = useState('')
+  const [selectedTab, setSelectedTab] = useState(0)
+  const [copiedFormat, setCopiedFormat] = useState('')
+
+  // Reset tab when dialog opens/closes
+  useEffect(() => {
+    if (!open) {
+      setSelectedTab(0)
+    }
+  }, [open])
+
+  const uploadToStorage = async () => {
+    setUploading(true)
+    setError('')
+    setUploadProgress(0)
+
+    try {
+      // 按倍率离屏重绘（文字清晰）再裁透明边；失败则回退预览画布
+      const rendered = renderAtScale?.(exportScale) ?? canvas
+      if (!rendered) {
+        throw new Error('无法生成图片')
+      }
+      const exportCanvas = cropCanvasToContent(rendered)
+      const blob = await new Promise<Blob | null>((resolve) => {
+        exportCanvas.toBlob(resolve, 'image/png')
+      })
+
+      if (!blob) {
+        throw new Error('无法生成图片')
+      }
+
+      // 生成文件名
+      const timestamp = Date.now()
+      const filename = `sekai_sticker_${timestamp}.png`
+
+      const result = await uploadStorageV2Direct(blob, filename, {
+        kind: 'sticker',
+        contentType: 'image/png',
+        onProgress: setUploadProgress,
+      })
+      setUploadedUrl(result.url)
+      setUploading(false)
+      onUploadSuccess?.(result.url)
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : '上传失败'
+      setError(errorMessage)
+      setUploading(false)
+    }
+  }
+
+  const getLinkFormats = () => {
+    if (!uploadedUrl) return {}
+
+    // 使用用户输入的文字，如果是多行则只取第一行，限制长度
+    const displayText = altText.split('\n')[0].substring(0, 50) || 'Sekai Sticker'
+
+    // 从 URL 中提取 UUID 路径（去除域名部分）
+    // 例如：https://r2.nightcord.de5.net/uuid/file.png -> uuid/file.png
+    const uuidPath = uploadedUrl.replace(/^https?:\/\/[^/]+\//, '')
+
+    return {
+      '直链': uploadedUrl,
+      'HTML': `<img src="${uploadedUrl}" alt="${displayText}" />`,
+      'Markdown': `![${displayText}](${uploadedUrl})`,
+      'BBCode': `[img]${uploadedUrl}[/img]`,
+      'SEKAI': `[sticker:${uploadedUrl}]`,
+      'SEKAI v2': `<$SEKAI:Stamp:custom=true:${uuidPath}>`,
+      'Forum': `[URL=${uploadedUrl}][IMG]${uploadedUrl}[/IMG][/URL]`,
+    }
+  }
+
+  const copyToClipboard = async (text: string, format: string) => {
+    try {
+      await navigator.clipboard.writeText(text)
+      setCopiedFormat(format)
+      setTimeout(() => setCopiedFormat(''), 2000)
+    } catch {
+      alert('复制失败')
+    }
+  }
+
+  const handleClose = () => {
+    setUploadedUrl('')
+    setError('')
+    setUploadProgress(0)
+    setCopiedFormat('')
+    onClose()
+  }
+
+  const formats = getLinkFormats()
+
+  return (
+    <Dialog open={open} onClose={handleClose} maxWidth="md" fullWidth>
+      <DialogTitle>
+        <Box display="flex" alignItems="center" justifyContent="space-between">
+          <Typography variant="h6">上传并分享</Typography>
+          <IconButton onClick={handleClose} size="small">
+            <Close />
+          </IconButton>
+        </Box>
+      </DialogTitle>
+      <DialogContent>
+        {!uploadedUrl && !uploading && (
+          <Box textAlign="center" py={3}>
+            <Typography variant="body1" gutterBottom>
+              上传贴纸到云端，获取分享链接
+            </Typography>
+            <Button
+              variant="contained"
+              color="secondary"
+              startIcon={<CloudUpload />}
+              onClick={uploadToStorage}
+              size="large"
+              sx={{ mt: 2 }}
+            >
+              开始上传
+            </Button>
+          </Box>
+        )}
+
+        {uploading && (
+          <Box py={3}>
+            <Typography variant="body2" gutterBottom align="center">
+              上传中... {uploadProgress}%
+            </Typography>
+            <LinearProgress variant="determinate" value={uploadProgress} color="secondary" />
+          </Box>
+        )}
+
+        {error && (
+          <Alert severity="error" sx={{ mb: 2 }}>
+            {error}
+          </Alert>
+        )}
+
+        {uploadedUrl && (
+          <Box>
+            <Alert severity="success" sx={{ mb: 2 }}>
+              上传成功！选择格式复制链接或提交到画廊：
+            </Alert>
+
+            <Tabs value={selectedTab} onChange={(_, v) => setSelectedTab(v)} sx={{ mb: 2 }}>
+              <Tab label="常用格式" />
+              <Tab label="提交到画廊" />
+              <Tab label="预览" />
+            </Tabs>
+
+            {selectedTab === 0 && (
+              <Box>
+                {Object.entries(formats).map(([format, link]) => (
+                  <Box key={format} mb={2}>
+                    <Typography variant="caption" color="text.secondary">
+                      {format}
+                    </Typography>
+                    <Box display="flex" gap={1} alignItems="center">
+                      <TextField
+                        fullWidth
+                        size="small"
+                        value={link}
+                        InputProps={{
+                          readOnly: true,
+                          style: { fontSize: '0.9rem' },
+                        }}
+                      />
+                      <Button
+                        variant={copiedFormat === format ? 'contained' : 'outlined'}
+                        color="secondary"
+                        startIcon={<ContentCopy />}
+                        onClick={() => copyToClipboard(link, format)}
+                        sx={{ minWidth: '100px' }}
+                      >
+                        {copiedFormat === format ? '已复制' : '复制'}
+                      </Button>
+                    </Box>
+                  </Box>
+                ))}
+              </Box>
+            )}
+
+            {selectedTab === 1 &&
+              (isToyBuild() ? (
+                // Toy 平台禁止 UGC，画廊提交入口停用
+                <Alert severity="warning" sx={{ my: 2 }}>
+                  🚫 {TOY_GALLERY_BLOCKED_REASON}
+                </Alert>
+              ) : (
+                <GallerySubmitForm
+                  uploadedUrl={uploadedUrl}
+                  defaultTitle={altText}
+                  defaultCharacterId={customImage ? undefined : characterId}
+                  onSuccess={() => {
+                    // Keep dialog open to show success message
+                  }}
+                />
+              ))}
+
+            {selectedTab === 2 && (
+              <Box textAlign="center" py={2}>
+                <img
+                  src={uploadedUrl}
+                  alt="Uploaded Sticker"
+                  style={{ maxWidth: '100%', border: '1px solid #444', borderRadius: '4px' }}
+                />
+              </Box>
+            )}
+          </Box>
+        )}
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+export default UploadDialog
