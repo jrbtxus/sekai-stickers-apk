@@ -10,7 +10,7 @@
  *   android/app/src/main/res/mipmap-<density>/ic_launcher.png
  *   android/app/src/main/res/mipmap-<density>/ic_launcher_round.png
  *   android/app/src/main/res/mipmap-<density>/ic_launcher_foreground.png
- *   android/app/src/main/res/mipmap-xxxhdpi/ic_launcher-playstore.png
+ *   android/app/src/main/res/mipmap-xxxhdpi/playstore_icon.png
  *   android/app/src/main/res/drawable 与 drawable-port/land-<density>/splash.png
  *
  * 依赖 python3 + Pillow（CI 里的 ubuntu runner 自带）。
@@ -86,7 +86,7 @@ for name, scale in DENSITIES.items():
 # Play 商店用 512x512 图标
 playstore = Image.new('RGBA', (512, 512), BRAND + (255,))
 playstore.alpha_composite(fit_contain(src, 512, pad_ratio=0.10))
-playstore.convert('RGB').save(os.path.join(RES, 'mipmap-xxxhdpi/ic_launcher-playstore.png'))
+playstore.convert('RGB').save(os.path.join(RES, 'mipmap-xxxhdpi/playstore_icon.png'))
 
 # 启动图：Capacitor 模板用 drawable / drawable-port-* / drawable-land-*，
 # 各种尺寸统一成同一张品牌色方图，交给 Android 的 centerCrop 拉伸。
