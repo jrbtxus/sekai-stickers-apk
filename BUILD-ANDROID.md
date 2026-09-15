@@ -1,0 +1,89 @@
+# 安卓 APK 构建说明
+
+把 `stickers-maker` 的 Web 前端打包成可安装的 Android APK。
+
+## 为什么不是 Electron
+
+Electron 只有桌面运行时：它的产物是 Chromium + Node 的 Linux/macOS/Windows
+可执行文件，没有 Android 版本，装不进 APK。
+
+安卓端能做到同等效果的方案是 **Capacitor**：把同一份 Vite 产物放进系统 WebView，
+再用原生插件补齐 WebView 缺少的能力（文件保存、分享、返回键）。
+仓库里的 `android/` 就是这个壳。
+
+| 桌面 Electron 做的事 | 这里的对应实现 |
+| --- | --- |
+| 打包 `index.html` + 静态资源 | `cap sync` 把 `dist/` 拷进 `android/app/src/main/assets/public` |
+| 应用图标 / 启动图 | `android/app/src/main/res/mipmap-*`、`drawable*/splash.png` |
+| 系统「另存为」 | `@capacitor/filesystem` + `@capacitor/share`（系统保存/分享面板） |
+| 窗口/返回行为 | `AndroidManifest` + `@capacitor/app` 的 `backButton` 监听 |
+
+## 产物
+
+- **云端（推荐）**：`.github/workflows/build-apk.yml`
+  - 触发：手动 `Actions → Build APK → Run workflow`，或推送到 `main`
+  - 产物：artifact `sekai-stickers-debug-<sha>`，里面是 `app-debug.apk`
+  - 一次构建约 3 分钟（含 npm ci、Vite 构建、Gradle 打包）
+- **本机**：需要 Android SDK（`ANDROID_HOME`）+ JDK 21
+
+  ```bash
+  npm ci --legacy-peer-deps
+  npm run cap:sync          # vite build --mode android && cap sync android
+  cd android && ./gradlew assembleDebug
+  # 输出：android/app/build/outputs/apk/debug/app-debug.apk
+  ```
+
+  一条命令等价写法：`npm run android:apk`
+
+## 关键参数
+
+| 项 | 值 | 位置 |
+| --- | --- | --- |
+| applicationId | `de.sekai.stickers` | `capacitor.config.json`（决定 `namespace` 与包名） |
+| 应用名 | `SEKAI贴纸` | `android/app/src/main/res/values/strings.xml` |
+| minSdk / targetSdk | 24 / 35 | `android/variables.gradle` |
+| 竖屏锁定、键盘避让 | `screenOrientation="portrait"`、`windowSoftInputMode="adjustResize"` | `android/app/src/main/AndroidManifest.xml` |
+| 签名 | debug keystore（`assembleDebug` 自动生成） | — |
+
+## 安卓端的必要改动
+
+1. **导出落盘**（`src/utils/nativePlatform.ts`）
+   APK 的 WebView 里 `<a download>` / blob 链接不会真正保存文件，
+   所以导出改成写进应用缓存再弹系统「保存/分享」面板。
+   浏览器构建完全不受影响（`isAndroidApp()` 为 false 时是 no-op）。
+2. **返回键**（`src/main.tsx`）
+   默认行为是直接退出 App，现在改成「有历史记录就返回上一页」，
+   到根页面才退出。
+3. **关掉 PWA Service Worker**（`vite.config.js` 的 `--mode android`）
+   Capacitor 用本地 server 提供资源，Service Worker 拿不到 `sw.js`（会拿到
+   `index.html`），PWA 的自动更新逻辑会反复失败重载，因此 Android 模式用 stub。
+4. **不产出 sourcemap**：省掉约 5MB 包体。
+
+## 生成物 vs 源文件
+
+`android/` 目录本身是模板生成的，但已经提交进仓库，可以按普通源码修改。
+
+| 路径 | 说明 |
+| --- | --- |
+| `android/app/src/main/assets/public/` | **生成物**，`cap sync` 覆盖，已 gitignore |
+| `android/app/src/main/assets/capacitor.*.json` | **生成物**，已 gitignore |
+| `android/capacitor-cordova-android-plugins/` | **生成物**，已 gitignore |
+| `android/app/capacitor.build.gradle` | 插件变化时 `cap sync` 重写 |
+| `android/app/src/main/res/mipmap-*`、`drawable*/splash.png` | 由 `scripts/generate-android-icons.mjs` 生成（已提交，避免 CI 依赖 Pillow） |
+
+品牌图（`toy-icon.png`）改了之后重新生成图标：
+
+```bash
+node scripts/generate-android-icons.mjs   # 需要 python3 + Pillow
+```
+
+## 已知限制
+
+- **登录（SEKAI Pass OAuth）在 APK 里走不通**：回调地址默认是
+  `<origin>/callback`，在 APK 里是 `https://localhost/callback`，OAuth 服务端不会
+  把 `localhost` 当合法跳转地址。要用起来需要给应用注册自定义 scheme
+  （`AndroidManifest` 里已生成 `custom_url_scheme`），并把
+  `VITE_OAUTH_REDIRECT_URI` 指过去。
+- **debug 签名**：换一台构建机重新生成 debug keystore 会导致签名变化，
+  安装新包时需要先卸载旧包（数据会丢）。要稳定升级请改用固定 keystore 签 release 包。
+- 贴纸素材全部内置于 APK（约 14MB），首屏无需联网；画廊/登录等联网功能仍需要网络。

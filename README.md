@@ -56,7 +56,14 @@ npm run build
 
 # 预览生产版本
 npm run preview
+
+# 构建安卓 APK（本地需要 Android SDK + JDK 21）
+npm run cap:sync && cd android && ./gradlew assembleDebug
 ```
+
+> 📱 想要可直接安装的 APK：推送到 `main` 或手动触发
+> [Build APK](.github/workflows/build-apk.yml) 工作流，在 Actions 里下载产物。
+> 实现细节与已知限制见 [BUILD-ANDROID.md](./BUILD-ANDROID.md)。
 
 ## 🎮 使用说明
 
