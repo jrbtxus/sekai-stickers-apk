@@ -86,6 +86,36 @@ keyPassword=***
 | 相册目录 | `Pictures/SEKAI贴纸/` | `SaveToGalleryPlugin.ALBUM_DIR` |
 | 存储权限 | `WRITE_EXTERNAL_STORAGE`（`maxSdkVersion=28`，仅旧系统需要） | `AndroidManifest.xml` |
 | 签名 | 固定 keystore，debug/release 共用 | `android/app/build.gradle` + Secrets |
+| CPU 架构 | **全架构通用**（universal），无需按 ABI 分发 | 见下 |
+
+### 关于 CPU 架构（为什么会问「要不要出 armv8a 包」）
+
+**结论：现有的 APK 就是全架构通用的，ARM32 / ARM64(armv8a) / x86 / x86_64 都能装能跑，
+不需要额外出一个 `arm64-v8a` 变体。**
+
+原因是**包里根本没有原生库**，而不是"包里塞了各架构的库"：
+
+| 检查 | 结果 |
+| --- | --- |
+| APK 内 `lib/<abi>/*.so` | 0 个（`unzip -l app.apk \| grep 'lib/'` 为空） |
+| 工程 NDK / `abiFilters` / `externalNativeBuild` / `splits` | 无任何配置 |
+| `@capacitor/app`、`@capacitor/filesystem`、`@capacitor/share` | 均为纯 Java，无 `jniLibs` |
+| 代码形态 | 纯 Java → DEX 字节码（虚拟机指令，与 CPU 架构无关） |
+
+只有含 `.so` 的包（NDK、第三方 SDK、Flutter/RN 原生模块等）才需要区分 ABI。
+如果将来引入了原生库，再按需加 `abiFilters` 或 ABI splits：
+
+```groovy
+android {
+    defaultConfig { ndk { abiFilters 'arm64-v8a' } }   // 只在含 .so 时才有意义
+}
+```
+
+自查一条命令即可（输出为空就等于没有原生库）：
+
+```bash
+unzip -l app-release.apk | grep 'lib/'
+```
 
 ## 安卓端的必要改动
 
