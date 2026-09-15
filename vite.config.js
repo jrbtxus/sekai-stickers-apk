@@ -250,7 +250,8 @@ export default defineConfig(({ mode }) => {
     build: {
       outDir: isToy ? "dist-toy" : "dist",
       emptyOutDir: true,
-      sourcemap: !isToy,
+      // APK 不需要 sourcemap（会白送几 MB 进包）
+      sourcemap: !isToy && !isAndroid,
       rollupOptions: {
         input: isToy ? 'index.toy.html' : 'index.html',
         output: {

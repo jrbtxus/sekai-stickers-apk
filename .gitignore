@@ -23,3 +23,6 @@ android/app/release/
 # APK 产物
 *.apk
 *.aab
+
+# Android 模式下不产出 sourcemap；本机调试用的 APK 副本
+/android-out/
