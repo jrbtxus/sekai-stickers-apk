@@ -139,7 +139,7 @@ jobs:
             exit 1
           fi
 
-          DIGESTS=""
+          DIGESTS_FILE=$(mktemp)
           for apk in out/*.apk; do
             echo "== $apk =="
             CERT=$("$APKSIGNER" verify --print-certs "$apk" | grep -E "Signer #1 certificate (DN|SHA-256 digest)")
@@ -149,14 +149,13 @@ jobs:
               echo "::error::$apk 缺少签名（APK 路径或签名配置有问题）"
               exit 1
             fi
-            DIGESTS="$DIGESTS$DIGEST
-"
+            echo "$DIGEST" >> "$DIGESTS_FILE"
           done
 
-          UNIQ=$(printf '%s' "$DIGESTS" | sed '/^$/d' | sort -u)
-          echo "去重后的签名："
+          UNIQ=$(sort -u "$DIGESTS_FILE" | sed '/^$/d')
+          echo "去重后的签名（SHA-256）："
           echo "$UNIQ"
-          if [ "$(printf '%s' "$UNIQ" | sed '/^$/d' | wc -l)" -ne 1 ]; then
+          if [ "$(echo "$UNIQ" | sed '/^$/d' | wc -l)" -ne 1 ]; then
             echo "::error::debug 与 release 签名不一致"
             exit 1
           fi
