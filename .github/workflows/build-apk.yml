@@ -79,6 +79,11 @@ jobs:
         run: npm run type-check
 
       - name: Build web bundle for Android + sync into native project
+        env:
+          # SEKAI Pass 公共客户端的 client_id（在开放平台 /apps 自助签发）。
+          # 没配这个仓库变量时是空串：壳照样能装能跑，只是点登录会报
+          # clientId is required —— 见 BUILD-ANDROID.md 的「已知限制」。
+          VITE_OAUTH_CLIENT_ID: ${{ vars.SEKAI_OAUTH_CLIENT_ID }}
         run: npm run cap:sync
 
       # 图标 / 启动图（android/app/src/main/res/mipmap-*、drawable*/splash.png）
