@@ -43,13 +43,22 @@ Electron 只有桌面运行时：它的产物是 Chromium + Node 的 Linux/macOS
 | 应用名 | `SEKAI贴纸` | `android/app/src/main/res/values/strings.xml` |
 | minSdk / targetSdk | 24 / 35 | `android/variables.gradle` |
 | 竖屏锁定、键盘避让 | `screenOrientation="portrait"`、`windowSoftInputMode="adjustResize"` | `android/app/src/main/AndroidManifest.xml` |
+| 相册目录 | `Pictures/SEKAI贴纸/` | `SaveToGalleryPlugin.ALBUM_DIR` |
+| 存储权限 | `WRITE_EXTERNAL_STORAGE`（`maxSdkVersion=28`，仅旧系统需要） | `AndroidManifest.xml` |
 | 签名 | debug keystore（`assembleDebug` 自动生成） | — |
 
 ## 安卓端的必要改动
 
-1. **导出落盘**（`src/utils/nativePlatform.ts`）
-   APK 的 WebView 里 `<a download>` / blob 链接不会真正保存文件，
-   所以导出改成写进应用缓存再弹系统「保存/分享」面板。
+1. **导出直接进相册**（`src/utils/nativePlatform.ts` + `SaveToGalleryPlugin.java`）
+   APK 的 WebView 里 `<a download>` / blob 链接不会真正保存文件。导出流程：
+
+   | 系统 | 行为 | 权限 |
+   | --- | --- | --- |
+   | Android 10+（API 29） | `MediaStore` 写入 `Pictures/SEKAI贴纸/`，并标记 `IS_PENDING` 保证原子落盘 | **不需要**运行时权限，不弹框（分存储下 App 写自己的媒体即可） |
+   | Android 9 及以下（API 24–28） | 先弹 `WRITE_EXTERNAL_STORAGE` 授权框 → 写公共 `Pictures/SEKAI贴纸/` → `MediaScannerConnection` 立即入相册 | 需要，由 Capacitor 权限流程申请 |
+   | 权限被拒 / 插件异常 | 回退系统「保存/分享」面板（写应用缓存） | — |
+
+   保存成功后提示「已保存到相册：Pictures/SEKAI贴纸/xxx.png」。
    浏览器构建完全不受影响（`isAndroidApp()` 为 false 时是 no-op）。
 2. **返回键**（`src/main.tsx`）
    默认行为是直接退出 App，现在改成「有历史记录就返回上一页」，
@@ -87,3 +96,6 @@ node scripts/generate-android-icons.mjs   # 需要 python3 + Pillow
 - **debug 签名**：换一台构建机重新生成 debug keystore 会导致签名变化，
   安装新包时需要先卸载旧包（数据会丢）。要稳定升级请改用固定 keystore 签 release 包。
 - 贴纸素材全部内置于 APK（约 14MB），首屏无需联网；画廊/登录等联网功能仍需要网络。
+- 相册里同名文件由 MediaStore 自动加序号（`xxx (1).png`），不会覆盖已有图片。
+- Android 9 及以下如果用户勾了「不再询问」并拒绝授权，导出会一直走分享面板回退路径，
+  需要在系统设置里手动给应用开存储权限。
