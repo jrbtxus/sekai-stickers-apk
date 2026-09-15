@@ -64,7 +64,8 @@ npm run cap:sync && cd android && ./gradlew assembleDebug assembleRelease
 > 📱 想要可直接安装的 APK：推送到 `main` 或手动触发
 > [Build APK](.github/workflows/build-apk.yml) 工作流，产物是
 > `sekai-stickers-{debug,release}-<sha>` 两个独立 artifact（固定 keystore 签名，可互相覆盖升级）。
-> 实现细节、签名配置与已知限制见 [BUILD-ANDROID.md](./BUILD-ANDROID.md)。
+> 实现细节与已知限制见 [BUILD-ANDROID.md](./BUILD-ANDROID.md)
+> （签名私钥的存放/轮换/恢复说明不随仓库分发）。
 
 ## 🎮 使用说明
 

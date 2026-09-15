@@ -29,3 +29,7 @@ android/app/release/
 
 # Android 模式下不产出 sourcemap；本机调试用的 APK 副本
 /android-out/
+
+# 签名/私钥安全文档：只保留在本机，不进仓库
+SECURITY-SIGNING.md
+sekai-signing-security.md
