@@ -33,16 +33,16 @@ jobs:
       GIT_CONFIG_VALUE_0: ssh://git@github.com/
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
 
       - name: Set up JDK 21
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "21"
@@ -65,8 +65,9 @@ jobs:
       - name: Build web bundle for Android + sync into native project
         run: npm run cap:sync
 
-      - name: Regenerate launcher icons / splash from brand art
-        run: node scripts/generate-android-icons.mjs
+      # 图标 / 启动图（android/app/src/main/res/mipmap-*、drawable*/splash.png）
+      # 已随仓库提交。品牌图改了就在本机跑 `node scripts/generate-android-icons.mjs`
+      # 重新生成并提交（CI 不再依赖 Pillow）。
 
       - name: Assemble debug APK
         run: |
@@ -85,7 +86,7 @@ jobs:
           echo "name=${NAME}" >> "$GITHUB_OUTPUT"
 
       - name: Upload APK artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: ${{ steps.collect.outputs.name }}
           path: out/*.apk
