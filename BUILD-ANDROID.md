@@ -22,9 +22,9 @@ Electron 只有桌面运行时：它的产物是 Chromium + Node 的 Linux/macOS
 
 - **云端（推荐）**：`.github/workflows/build-apk.yml`
   - 触发：手动 `Actions → Build APK → Run workflow`，或推送到 `main`
-  - 产物：**一个 artifact 里两个包**
-    - `sekai-stickers-debug-<sha>.apk`
-    - `sekai-stickers-release-<sha>.apk`
+  - 产物：**两个独立 artifact**（Actions 页面各一条，可分别下载）
+    - `sekai-stickers-debug-<sha>` → `sekai-stickers-debug-<sha>.apk`
+    - `sekai-stickers-release-<sha>` → `sekai-stickers-release-<sha>.apk`
   - workflow 内置校验：两个包必须同一签名，否则直接失败
   - 一次构建约 3 分钟（含 npm ci、Vite 构建、Gradle 打包两个变体）
 - **本机**：需要 Android SDK（`ANDROID_HOME`）+ JDK 21
