@@ -47,8 +47,14 @@ jobs:
           distribution: temurin
           java-version: "21"
 
-      - name: Set up Android SDK + Gradle cache
-        uses: android-actions/setup-android@v3
+      # ubuntu-latest 自带 Android SDK（ANDROID_HOME=/usr/local/lib/android/sdk、
+      # cmdline-tools + 各版本 platform/build-tools），因此不需要 android-actions/setup-android
+      # （v3 会去装已下架的 "tools" 包而直接报错）。这里只做一次可见性检查。
+      - name: Check Android SDK on runner
+        run: |
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          ls "$ANDROID_HOME/platforms" || true
+          ls "$ANDROID_HOME/build-tools" || true
 
       - name: Install npm dependencies
         run: npm ci --legacy-peer-deps
