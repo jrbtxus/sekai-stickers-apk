@@ -16,14 +16,22 @@
  */
 import type { SaveToGalleryProbeResult } from './saveToGallery'
 
-const CAPACITOR_GLOBAL = '__capacitorPlatform'
-
-type CapacitorWindow = typeof window & Record<string, unknown>
-
-/** True only inside the packaged Android app (Capacitor bridge present). */
+/**
+ * 是否是打包后的安卓 App（Capacitor 桥存在）。
+ *
+ * ⚠️ 这里必须和 Capacitor core 自己的判定方式一致：
+ * `@capacitor/core` 的 getPlatformId() 判断的是 `window.androidBridge`
+ * （见 node_modules/@capacitor/core/dist/index.cjs.js），
+ * Capacitor **不会**设置 `window.__capacitorPlatform` 这种自定义字段。
+ * 之前就是误用了后者，导致 APK 里 isAndroidApp() 恒为 false、
+ * 导出悄悄走了网页下载分支（WebView 里 `<a download>` 不落盘）→
+ * 用户只看到「下载成功」而相册里什么都没有。
+ */
 export function isAndroidApp(): boolean {
   if (typeof window === 'undefined') return false
-  return (window as CapacitorWindow)[CAPACITOR_GLOBAL] === 'android'
+  const w = window as unknown as Record<string, unknown>
+  // androidBridge 由原生 Bridge 在页面加载前注入
+  return Boolean(w.androidBridge) || w.__capacitorPlatform === 'android'
 }
 
 /** data:image/png;base64,xxx → 纯 base64。 */
