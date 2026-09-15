@@ -2,6 +2,9 @@
   "name": "sekai-stickers-merged",
   "private": true,
   "version": "1.0.0",
+  "engines": {
+    "node": ">=24"
+  },
   "type": "module",
   "description": "SEKAI 贴纸生成器",
   "license": "AGPL-3.0-only",
