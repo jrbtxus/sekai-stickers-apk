@@ -33,3 +33,9 @@ android/app/release/
 # 签名/私钥安全文档：只保留在本机，不进仓库
 SECURITY-SIGNING.md
 sekai-signing-security.md
+
+# 交接/安全类文档：仅保留在本机，不进仓库
+HANDOVER.md
+handover.md
+SECURITY-SIGNING.md
+sekai-signing-security.md
