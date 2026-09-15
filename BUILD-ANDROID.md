@@ -14,7 +14,7 @@ Electron 只有桌面运行时：它的产物是 Chromium + Node 的 Linux/macOS
 | 桌面 Electron 做的事 | 这里的对应实现 |
 | --- | --- |
 | 打包 `index.html` + 静态资源 | `cap sync` 把 `dist/` 拷进 `android/app/src/main/assets/public` |
-| 应用图标 / 启动图 | `android/app/src/main/res/mipmap-*`、`drawable*/splash.png` |
+| 应用图标 / 启动图 | `android/app/src/main/res/mipmap-*`、`drawable/splash.xml` + `drawable-nodpi/` |
 | 系统「另存为」 | `@capacitor/filesystem` + `@capacitor/share`（系统保存/分享面板） |
 | 窗口/返回行为 | `AndroidManifest` + `@capacitor/app` 的 `backButton` 监听 |
 
@@ -129,7 +129,24 @@ keyPassword=***
 | `android/app/src/main/assets/capacitor.*.json` | **生成物**，已 gitignore |
 | `android/capacitor-cordova-android-plugins/` | **生成物**，已 gitignore |
 | `android/app/capacitor.build.gradle` | 插件变化时 `cap sync` 重写 |
-| `android/app/src/main/res/mipmap-*`、`drawable*/splash.png` | 由 `scripts/generate-android-icons.mjs` 生成（已提交，避免 CI 依赖 Pillow） |
+| `android/app/src/main/res/mipmap-*`、`drawable-nodpi/` | 由 `scripts/generate-android-icons.mjs` 生成（已提交，避免 CI 依赖 Pillow） |
+
+### 图标与启动图
+
+两者都用同一套「贴纸主视觉」裁剪——从 `toy-icon.png` 裁出 `(0.30,0.30)-(0.78,0.78)`
+的正方形区域（避开顶部大标题）。**不要**把整张 1000×1000 的品牌图直接缩进去：
+标题在 48px 图标里会糊成蓝色斑块，做启动背景时还会被裁剪线切掉半行。
+
+| 资源 | 尺寸 | 说明 |
+| --- | --- | --- |
+| `mipmap-<density>/ic_launcher_foreground.png` | 108dp | 自适应图标前景，图形限制在中心 66dp 安全区 |
+| `mipmap-<density>/ic_launcher.png` / `_round.png` | 48dp | Android 7 及以下用的传统图标（品牌粉底 + 图案） |
+| `drawable-nodpi/splash_art.png` | 512px | 启动图居中的贴纸主视觉 |
+| `drawable-nodpi/splash_gradient.png` | 512px | 启动图背景：径向渐变（中心亮粉 → 边缘品牌浅粉），任意屏幕比例不变形、无硬边界 |
+
+启动画面由层列表 `drawable/splash.xml` 组装成 `windowBackground`。
+注意 Capacitor **不调用** `installSplashScreen()`，所以 `Theme.SplashScreen` 的
+`windowSplashScreenAnimatedIcon` 等属性本来就不生效，实际显示的就是这个窗口背景。
 
 品牌图（`toy-icon.png`）改了之后重新生成图标：
 
