@@ -217,6 +217,38 @@ WebView。按触发顺序有三个断点：
 - Android 9 及以下如果用户勾了「不再询问」并拒绝授权，导出会一直走分享面板回退路径，
   需要在系统设置里手动给应用开存储权限。
 
+## 排障记录：APK 里导出「没反应/提示下载成功但没有文件」
+
+**症状**：点「保存图片」提示「下载成功！」，但相册、Pictures、下载目录里都找不到文件。
+
+**根因**：`isAndroidApp()` 之前判断的是 `window.__capacitorPlatform`，
+而 **Capacitor 7 从不设置这个字段**。它的真实判据是 `window.androidBridge`：
+
+```js
+// node_modules/@capacitor/core/dist/index.cjs.js
+const getPlatformId = (win) => {
+    if (win?.androidBridge) return 'android';
+    else if (win?.webkit?.messageHandlers?.bridge) return 'ios';
+    else return 'web';
+};
+```
+
+后果：APK 里 `isAndroidApp()` 恒为 `false` → 导出走网页下载分支
+（WebView 里 `<a download>` 不落盘）→ 用户只看到「下载成功」；
+启动自检与返回键处理也一并失效。修复见 `src/utils/nativePlatform.ts`。
+
+**教训（测试方法）**：本地 Electron 冒烟测试原本注入的是
+`window.__capacitorPlatform='android'` —— 一个真实环境里不存在的字段，
+于是测试一路绿灯却掩盖了 bug。现在改为注入 `window.androidBridge = {}`，
+与真实 WebView 一致；`Capacitor.getPlatform()` 在修前返回 `web`、修后返回 `android`，
+这就是判断这次修复是否生效的可靠信号。
+
+**自查命令**（在任何 APK 的 Web 产物里确认判定方式）：
+
+```bash
+unzip -p app.apk "assets/public/assets/index-*.js" | grep -o "androidBridge" | head
+```
+
 ## 排障：提示保存成功但相册里找不到
 
 按顺序排查（每一步都能用 App 自身的提示验证）：
