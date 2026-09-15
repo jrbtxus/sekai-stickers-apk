@@ -17,8 +17,6 @@
 #   SEKAI_KEY_PASSWORD        key 口令（PKCS12 下与 keystore 口令相同）
 #   SEKAI_KEYSTORE_FILENAME   落盘文件名，默认 sekai-release.jks（可选）
 #
-# 说明：Electron 没有 Android 运行时（Chromium+Node 桌面二进制装不进 APK），
-# 所以安卓端用 Capacitor（系统 WebView + 原生插件）承载同一份 Web 产物。
 
 name: Build APK
 
@@ -54,7 +52,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v5
         with:
-          node-version: 22
+          node-version: 24
           cache: npm
 
       - name: Set up JDK 21
