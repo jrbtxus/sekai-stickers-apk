@@ -18,6 +18,14 @@ const isCallbackRoute = window.location.pathname === '/callback'
  * 只有到根页面时才退出。仅在 APK（Capacitor）环境生效，浏览器里是 no-op。
  */
 if ((window as unknown as Record<string, unknown>).__capacitorPlatform === 'android') {
+  // 启动自检：确认相册保存通道与存储权限模型（API 29+ 零权限；
+  // API 28 及以下才需要 WRITE_EXTERNAL_STORAGE，并在首次保存时弹授权框）。
+  void import('./utils/nativePlatform')
+    .then(({ initAndroidPlatform }) => initAndroidPlatform())
+    .catch(() => {
+      /* 非 APK 环境或插件缺失时忽略 */
+    })
+
   void import('@capacitor/app')
     .then(({ App: CapacitorApp }) => {
       void CapacitorApp.addListener('backButton', ({ canGoBack }) => {

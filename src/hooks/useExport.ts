@@ -92,7 +92,8 @@ export function useExport(
 
   const saveOrDownload = useCallback(
     async (dataUrl: string, filename: string): Promise<void> => {
-      // APK（Android WebView）里 <a download> 不会落盘，改走系统分享/保存面板。
+      // APK（Android WebView）里 <a download> 不会落盘：
+      // 优先写进系统相册，失败再回退系统分享面板（结果见 nativePlatform 的说明）。
       if (isAndroidApp()) {
         await saveImageViaAndroid(dataUrl, filename)
         setDownloadPopupOpen(true)

@@ -45,7 +45,10 @@ import ExportPanel, { ExportBackground, ExportScale } from './components/section
 import LoginButton from './components/auth/LoginButton'
 import UserMenu from './components/auth/UserMenu'
 import { isToyBuild, TOY_GALLERY_BLOCKED_REASON } from './utils/toy'
-import { lastAndroidSaveHint } from './utils/nativePlatform'
+import {
+  lastAndroidSaveResult,
+  openSavedImageInAndroid,
+} from './utils/nativePlatform'
 
 // Lazy load heavy dialog components
 const Info = lazy(() => import('./components/Info'))
@@ -429,6 +432,14 @@ function App() {
     saveToHistory()
     void fanBonus.checkAfterFirstExport()
   }, [guardContentRisk, exportHooks, saveToHistory, fanBonus])
+
+  // 保存到相册后的一键查看（用来确认图真的进了相册）。
+  // 保存流程本身会 setDownloadPopupOpen(true) 触发重渲染，
+  // 这里直接读模块级的 lastAndroidSaveResult 即可，不需要额外 state。
+  const handleOpenSavedImage = useCallback(() => {
+    const uri = lastAndroidSaveResult?.uri
+    if (uri) void openSavedImageInAndroid(uri)
+  }, [])
 
   // Apply configuration (used by both history and undo/redo)
   const applyConfig = useCallback(
@@ -1331,7 +1342,12 @@ function App() {
       />
       <NotificationSnackbar
         open={uiState.downloadPopupOpen}
-        message={lastAndroidSaveHint ?? '下载成功！'}
+        message={lastAndroidSaveResult?.message ?? '下载成功！'}
+        action={
+          lastAndroidSaveResult?.canOpen
+            ? { label: '查看', onClick: handleOpenSavedImage }
+            : undefined
+        }
         onClose={() => uiState.setDownloadPopupOpen(false)}
       />
       {/* 内容风险拦截提示（toy 构建才会触发） */}
