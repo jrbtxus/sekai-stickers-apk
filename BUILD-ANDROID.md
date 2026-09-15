@@ -124,11 +124,70 @@ node scripts/generate-android-icons.mjs   # 需要 python3 + Pillow
 
 ## 已知限制
 
-- **登录（SEKAI Pass OAuth）在 APK 里走不通**：回调地址默认是
-  `<origin>/callback`，在 APK 里是 `https://localhost/callback`，OAuth 服务端不会
-  把 `localhost` 当合法跳转地址。要用起来需要给应用注册自定义 scheme
-  （`AndroidManifest` 里已生成 `custom_url_scheme`），并把
-  `VITE_OAUTH_REDIRECT_URI` 指过去。
+### 登录（SEKAI Pass OAuth）在 APK 里走不通
+
+这不是壳里的代码 bug，而是**这个应用没在平台上登记过**。按触发顺序有四个断点：
+
+1. **`client_id` 是空串** —— 最先炸的一步。`src/services/auth.service.ts:18` 读
+   `import.meta.env.VITE_OAUTH_CLIENT_ID`，仓库里只有上游那份占位符 `.env.example`
+   （`.env*` 被 gitignore），workflow 也不注入，所以产物里是 `clientId:""`，
+   SDK 构造函数直接抛 `clientId is required`。真实值属于**部署配置**：谁部署网页版，
+   谁在部署平台的环境变量里注入它，仓库里从来就没有。
+2. **回调地址是 `https://localhost/callback`**。`capacitor.config.json` 里
+   `server.androidScheme: "https"`，Capacitor 默认 hostname 是 `localhost`，
+   所以 WebView 里 `window.location.origin` = `https://localhost`，
+   `auth.service.ts:19` 的默认值就落成它。
+3. **授权页其实开在系统浏览器里**。Capacitor 的 `Bridge.launchIntent()`
+   （`@capacitor/android` 的 `com/getcapacitor/Bridge.java:393-431`）会把**任何非本
+   应用 origin 的导航**用 `ACTION_VIEW` 丢给系统浏览器。于是回调落在 Chrome 里：
+   它真去连本机 443；而 PKCE 的 `code_verifier` 按 SDK 约定存在 WebView 的
+   sessionStorage 里，Chrome 那边没有，就算回调回来了也换不到 token。
+4. **壳里没有深链入口**。`AndroidManifest.xml` 只有 MAIN/LAUNCHER；
+   `strings.xml` 里那个 `custom_url_scheme=de.sekai.stickers` 是 Capacitor 模板
+   生成的死字符串，没有任何 intent-filter 或 `appUrlOpen` 监听在用它。
+
+> 两个常见的「绕过去」都不成立：
+> - `https://localhost/callback` 在 SEKAI Pass 那边**能过格式校验**
+>   （`sekai-pass/src/lib/applications.ts:76-111` 对 https 无条件放行；该服务端开源在
+>   `25-ji-code-de/sekai-pass`），拦住它的是「没登记」+「外部浏览器打不开」，
+>   让服务端把 localhost 加白也没用。
+> - 把壳的 origin 改成真实域名（`server.hostname`）也绕不过去：回调是外部浏览器去
+>   访问那个域名的**真实站点**，不是壳里的本地资源，PKCE verifier 同样对不上。
+
+要让 APK 能登录，两边各做一半（**服务端代码不用改**）：
+
+**平台侧 —— 只能人工做，代码里补不出来**
+
+- 登录 <https://id.nightcord.de5.net>，仪表板页脚点「开放平台」，或直接开 `/apps`，
+  自助创建应用：公共客户端、认证方式选 `none`（只有 `client_id`，靠 PKCE，不用 secret），
+  回调地址填 `de.sekai.stickers://callback`。SEKAI Pass 明确放行「带点号的自定义
+  scheme」（`applications.ts:105-108`），它要的正是原生 App 这种回调。
+  一个应用最多挂 10 条回调地址，所以也能直接给网页版那个应用加一条、共用同一个
+  `client_id`（前提是你有那个应用的所有权）。
+- 把拿到的 `client_id` 注入构建（仓库变量 / 部署平台环境变量）。
+  `client_id` 每次 authorize 都明文挂在 URL 上，本身不是秘密；公共客户端也没有
+  `client_secret`，所以走这条路不引入任何密钥管理负担。
+- 回调地址是**精确字符串比对**（`sekai-pass/src/index.ts:331-338`），
+  注册什么就得用什么，`de.sekai.stickers://callback` 和
+  `de.sekai.stickers:/callback` 是两条不同的记录。
+
+**壳侧 —— 本仓要改的四件事**
+
+1. `AndroidManifest.xml` 给 MainActivity 加 BROWSABLE intent-filter：
+   `scheme=@string/custom_url_scheme`、`host=callback`（`singleTask` 已就位，
+   深链会走 `onNewIntent`）；
+2. 安卓构建把默认 `redirect_uri` 换成 `de.sekai.stickers://callback`
+   （仍允许 `VITE_OAUTH_REDIRECT_URI` 覆盖）；
+3. 用 `@capacitor/app` 的 `App.getLaunchUrl()`（冷启动）+ `appUrlOpen`（热启动）
+   接住回调，再 `location.replace('/callback?' + query)` —— Capacitor 的 html5mode
+   默认为 true（`@capacitor/android` 的 `WebViewLocalServer.java:425`），无扩展名的
+   路径会回落 `index.html`，于是 `src/main.tsx:14` 的路由判定和现成的
+   `AuthCallback` 组件原样复用，不用另写一套回调 UI；
+4. 安卓下把 `code_verifier` / `state` 镜像进 localStorage（SDK 支持注入 storage），
+   避免用户切到浏览器登录期间进程被杀、回来时 PKCE 对不上而白做一次。
+
+### 其他限制
+
 - **debug 与 release 的差别**：两者同一签名、同一 `applicationId`，
   release 只是非 debuggable（体积略小，约 23.3MB vs 24.4MB），
   所以**不能同时装**；debug 包仅用于抓日志/DevTools 调试。
