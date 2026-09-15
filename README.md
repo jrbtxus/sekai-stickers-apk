@@ -58,12 +58,13 @@ npm run build
 npm run preview
 
 # 构建安卓 APK（本地需要 Android SDK + JDK 21）
-npm run cap:sync && cd android && ./gradlew assembleDebug
+npm run cap:sync && cd android && ./gradlew assembleDebug assembleRelease
 ```
 
 > 📱 想要可直接安装的 APK：推送到 `main` 或手动触发
-> [Build APK](.github/workflows/build-apk.yml) 工作流，在 Actions 里下载产物。
-> 实现细节与已知限制见 [BUILD-ANDROID.md](./BUILD-ANDROID.md)。
+> [Build APK](.github/workflows/build-apk.yml) 工作流，产物是
+> `sekai-stickers-{debug,release}-<sha>.apk` 两个包（固定 keystore 签名，可互相覆盖升级）。
+> 实现细节、签名配置与已知限制见 [BUILD-ANDROID.md](./BUILD-ANDROID.md)。
 
 ## 🎮 使用说明
 

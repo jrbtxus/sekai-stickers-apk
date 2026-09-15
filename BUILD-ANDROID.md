@@ -22,18 +22,54 @@ Electron 只有桌面运行时：它的产物是 Chromium + Node 的 Linux/macOS
 
 - **云端（推荐）**：`.github/workflows/build-apk.yml`
   - 触发：手动 `Actions → Build APK → Run workflow`，或推送到 `main`
-  - 产物：artifact `sekai-stickers-debug-<sha>`，里面是 `app-debug.apk`
-  - 一次构建约 3 分钟（含 npm ci、Vite 构建、Gradle 打包）
+  - 产物：**一个 artifact 里两个包**
+    - `sekai-stickers-debug-<sha>.apk`
+    - `sekai-stickers-release-<sha>.apk`
+  - workflow 内置校验：两个包必须同一签名，否则直接失败
+  - 一次构建约 3 分钟（含 npm ci、Vite 构建、Gradle 打包两个变体）
 - **本机**：需要 Android SDK（`ANDROID_HOME`）+ JDK 21
 
   ```bash
   npm ci --legacy-peer-deps
   npm run cap:sync          # vite build --mode android && cap sync android
-  cd android && ./gradlew assembleDebug
-  # 输出：android/app/build/outputs/apk/debug/app-debug.apk
+  cd android && ./gradlew assembleDebug assembleRelease
+  # 输出：android/app/build/outputs/apk/{debug/app-debug.apk,release/app-release.apk}
   ```
 
   一条命令等价写法：`npm run android:apk`
+
+## 签名（固定 keystore，debug 与 release 共用）
+
+签名不再随构建机变化，两个包可以互相覆盖安装/升级：
+
+| 项 | 值 |
+| --- | --- |
+| keystore | PKCS12，别名 `sekai`，有效期 30 年 |
+| 证书 | `CN=SEKAI Stickers, OU=25-ji-code-de, O=sekai-stickers-apk, L=Tokyo, C=JP` |
+| 证书指纹 SHA-256 | `3CD5B57220AC1633848E4655BA702A124EBD07D86E89A1367738E8067FCF3799` |
+| 签名方案 | v1 + v2 + v3 |
+
+keystore **不入库**，通过仓库 Secrets 注入（Settings → Secrets and variables → Actions）：
+
+| Secret | 含义 |
+| --- | --- |
+| `SEKAI_KEYSTORE_BASE64` | keystore 文件的 base64（`base64 -w0 sekai-release.jks`） |
+| `SEKAI_KEYSTORE_PASSWORD` | keystore 口令 |
+| `SEKAI_KEY_ALIAS` | key 别名（`sekai`） |
+| `SEKAI_KEY_PASSWORD` | key 口令（PKCS12 下与 keystore 口令相同） |
+| `SEKAI_KEYSTORE_FILENAME` | 落盘文件名，默认 `sekai-release.jks`（可选） |
+
+本机开发想用同一套签名，就在 `android/keystore.properties` 里写：
+
+```properties
+storeFile=/absolute/path/sekai-release.jks
+storePassword=***
+keyAlias=sekai
+keyPassword=***
+```
+
+> ⚠️ **这套 keystore 必须备份**（离线保存）。丢了就再也签不出能覆盖升级的包，
+> 只能换包名重新发布。两个 APK 的 `applicationId` 相同，**不能同时安装**。
 
 ## 关键参数
 
@@ -45,7 +81,7 @@ Electron 只有桌面运行时：它的产物是 Chromium + Node 的 Linux/macOS
 | 竖屏锁定、键盘避让 | `screenOrientation="portrait"`、`windowSoftInputMode="adjustResize"` | `android/app/src/main/AndroidManifest.xml` |
 | 相册目录 | `Pictures/SEKAI贴纸/` | `SaveToGalleryPlugin.ALBUM_DIR` |
 | 存储权限 | `WRITE_EXTERNAL_STORAGE`（`maxSdkVersion=28`，仅旧系统需要） | `AndroidManifest.xml` |
-| 签名 | debug keystore（`assembleDebug` 自动生成） | — |
+| 签名 | 固定 keystore，debug/release 共用 | `android/app/build.gradle` + Secrets |
 
 ## 安卓端的必要改动
 
@@ -93,8 +129,10 @@ node scripts/generate-android-icons.mjs   # 需要 python3 + Pillow
   把 `localhost` 当合法跳转地址。要用起来需要给应用注册自定义 scheme
   （`AndroidManifest` 里已生成 `custom_url_scheme`），并把
   `VITE_OAUTH_REDIRECT_URI` 指过去。
-- **debug 签名**：换一台构建机重新生成 debug keystore 会导致签名变化，
-  安装新包时需要先卸载旧包（数据会丢）。要稳定升级请改用固定 keystore 签 release 包。
+- **debug 与 release 的差别**：两者同一签名、同一 `applicationId`，
+  release 只是非 debuggable（体积略小，约 23.3MB vs 24.4MB），
+  所以**不能同时装**；debug 包仅用于抓日志/DevTools 调试。
+- **keystore 必须备份**：丢了就只能换包名重新发布（详见上面的签名章节）。
 - 贴纸素材全部内置于 APK（约 14MB），首屏无需联网；画廊/登录等联网功能仍需要网络。
 - 相册里同名文件由 MediaStore 自动加序号（`xxx (1).png`），不会覆盖已有图片。
 - Android 9 及以下如果用户勾了「不再询问」并拒绝授权，导出会一直走分享面板回退路径，
