@@ -127,15 +127,36 @@ jobs:
 
       - name: Verify both APKs share one signature
         run: |
-          set -euo pipefail
-          APKSIGNER=$(ls "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -1)
+          APKSIGNER=$(ls "$ANDROID_HOME"/build-tools/*/apksigner 2>/dev/null | sort -V | tail -1)
+          if [ -z "$APKSIGNER" ]; then
+            APKSIGNER=$(ls /usr/local/lib/android/sdk/build-tools/*/apksigner 2>/dev/null | sort -V | tail -1)
+          fi
+          echo "ANDROID_HOME=${ANDROID_HOME:-<unset>}"
+          echo "apksigner=$APKSIGNER"
+          ls "$ANDROID_HOME"/build-tools 2>/dev/null || true
+          if [ -z "$APKSIGNER" ]; then
+            echo "::error::找不到 apksigner，无法校验签名"
+            exit 1
+          fi
+
+          DIGESTS=""
           for apk in out/*.apk; do
             echo "== $apk =="
-            "$APKSIGNER" verify --print-certs "$apk" | grep -E "Signer #1 certificate (DN|SHA-256 digest)"
+            CERT=$("$APKSIGNER" verify --print-certs "$apk" | grep -E "Signer #1 certificate (DN|SHA-256 digest)")
+            echo "$CERT"
+            DIGEST=$(echo "$CERT" | grep "SHA-256 digest" | awk '{print $NF}')
+            if [ -z "$DIGEST" ]; then
+              echo "::error::$apk 缺少签名（APK 路径或签名配置有问题）"
+              exit 1
+            fi
+            DIGESTS="$DIGESTS$DIGEST
+"
           done
-          DIGESTS=$(for apk in out/*.apk; do "$APKSIGNER" verify --print-certs "$apk" | grep "SHA-256 digest" | awk '{print $NF}'; done | sort -u)
-          echo "$DIGESTS"
-          if [ "$(echo "$DIGESTS" | wc -l)" -ne 1 ]; then
+
+          UNIQ=$(printf '%s' "$DIGESTS" | sed '/^$/d' | sort -u)
+          echo "去重后的签名："
+          echo "$UNIQ"
+          if [ "$(printf '%s' "$UNIQ" | sed '/^$/d' | wc -l)" -ne 1 ]; then
             echo "::error::debug 与 release 签名不一致"
             exit 1
           fi
