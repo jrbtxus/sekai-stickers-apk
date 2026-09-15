@@ -42,4 +42,12 @@
     <!-- Permissions -->
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!--
+      保存贴纸到相册 Pictures/SEKAI贴纸：
+      Android 10+ 走 MediaStore 分存储，不需要任何权限；
+      这里只为 Android 9 及以下声明（插件会在那时弹授权框）。
+    -->
+    <uses-permission
+        android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="28" />
 </manifest>

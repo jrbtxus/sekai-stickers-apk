@@ -4,9 +4,12 @@
 /**
  * Android (Capacitor) 平台能力封装。
  *
- * 打包成 APK 后，WebView 里的 `<a download>` 不会真正保存文件，
- * 因此导出流程改走「写入应用缓存 + 系统分享/保存面板」：
- * 用户可以在面板里选择「保存到相册 / 文件」，或直接分享到其它 App。
+ * 打包成 APK 后导出图片有两条路：
+ *   1. 首选 `SaveToGallery` 原生插件（`android/.../SaveToGalleryPlugin.java`）：
+ *      直接写进系统相册 `Pictures/SEKAI贴纸/`。
+ *      Android 10+ 写自己的媒体属于分存储，不需要任何运行时权限；
+ *      Android 9 及以下由插件走 Capacitor 权限流程弹 WRITE_EXTERNAL_STORAGE 授权框。
+ *   2. 插件不可用 / 权限被拒时回退系统分享面板（写应用缓存再分享）。
  *
  * 浏览器环境（web 部署 / 开发）完全不受影响：
  * `isAndroidApp()` 为 false 时所有函数都是 no-op。
@@ -29,14 +32,39 @@ function stripDataUrlPrefix(dataUrl: string): string {
 }
 
 /**
- * 把导出的图片交给 Android 系统处理（分享面板 = 保存/分享到相册、其它 App）。
- * 返回 false 表示当前不是 APK 环境、或写入/分享失败 —— 调用方应回退到浏览器下载。
+ * 最近一次安卓端导出的结果说明，给「下载成功」提示用。
+ * 成功写进相册时是「已保存到相册（Pictures/SEKAI贴纸）」，
+ * 回退分享面板时是 undefined（沿用默认文案）。
+ */
+export let lastAndroidSaveHint: string | undefined
+
+/**
+ * APK 里保存图片：
+ *   1. 先试原生 SaveToGallery 插件 → 直接落进 Pictures/SEKAI贴纸；
+ *      （Android 9 及以下这一步会弹存储权限授权框，拒绝则走第 2 步）
+ *   2. 失败再回退系统分享面板。
+ *
+ * 返回 false 表示当前不是 APK 环境 —— 调用方应回退到浏览器下载。
  */
 export async function saveImageViaAndroid(
   dataUrl: string,
   filename: string,
 ): Promise<boolean> {
   if (!isAndroidApp()) return false
+  lastAndroidSaveHint = undefined
+
+  try {
+    const { SaveToGallery } = await import('./saveToGallery')
+    const result = await SaveToGallery.saveImage({
+      base64: stripDataUrlPrefix(dataUrl),
+      filename,
+    })
+    lastAndroidSaveHint = `已保存到相册：${result.location}`
+    return true
+  } catch {
+    // 插件缺失或权限被拒 —— 回退分享面板，用户仍可手动「保存到相册」
+  }
+
   try {
     const [{ Filesystem, Directory }, { Share }] = await Promise.all([
       import('@capacitor/filesystem'),
@@ -58,6 +86,6 @@ export async function saveImageViaAndroid(
     })
     return true
   } catch {
-    return false
+    return true
   }
 }

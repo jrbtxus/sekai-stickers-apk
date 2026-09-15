@@ -45,6 +45,7 @@ import ExportPanel, { ExportBackground, ExportScale } from './components/section
 import LoginButton from './components/auth/LoginButton'
 import UserMenu from './components/auth/UserMenu'
 import { isToyBuild, TOY_GALLERY_BLOCKED_REASON } from './utils/toy'
+import { lastAndroidSaveHint } from './utils/nativePlatform'
 
 // Lazy load heavy dialog components
 const Info = lazy(() => import('./components/Info'))
@@ -1330,7 +1331,7 @@ function App() {
       />
       <NotificationSnackbar
         open={uiState.downloadPopupOpen}
-        message="下载成功！"
+        message={lastAndroidSaveHint ?? '下载成功！'}
         onClose={() => uiState.setDownloadPopupOpen(false)}
       />
       {/* 内容风险拦截提示（toy 构建才会触发） */}
