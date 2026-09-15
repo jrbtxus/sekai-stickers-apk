@@ -103,8 +103,16 @@ jobs:
           chmod 600 "$KEYSTORE_PATH"
           echo "SEKAI_KEYSTORE_FILE=$KEYSTORE_PATH" >> "$GITHUB_ENV"
           echo "keystore 已写入 $KEYSTORE_PATH ($(stat -c %s "$KEYSTORE_PATH") bytes)"
+          # 指纹守卫：确认注入的确实是预期的固定 keystore（换错/被替换会立刻失败）
+          KEYSTORE_SHA=$(sha256sum "$KEYSTORE_PATH" | awk '{print $1}')
+          echo "keystore sha256=$KEYSTORE_SHA"
+          if [ "$KEYSTORE_SHA" != "f6b518abad7bff23d1479efa94393584f91bfc816de478afc90f28b9e9bc2410" ]; then
+            echo "::error::keystore 与预期的固定签名文件不一致，拒绝用它签名"
+            exit 1
+          fi
           keytool -list -keystore "$KEYSTORE_PATH" -storepass "$SEKAI_KEYSTORE_PASSWORD" -alias "$SEKAI_KEY_ALIAS" > /dev/null
           echo "keystore 校验通过：alias=$SEKAI_KEY_ALIAS"
+          echo "::add-mask::$SEKAI_KEYSTORE_PASSWORD"
 
       - name: Assemble debug + release APK
         run: |
@@ -168,6 +176,21 @@ jobs:
             exit 1
           fi
           echo "✓ debug 与 release 签名一致"
+
+      # 双保险：确认待上传目录里只有 APK，没有 keystore / 口令文件混进去
+      - name: Assert no signing material in upload dir
+        run: |
+          echo "upload dir 内容："
+          ls -la out/
+          if find out -type f ! -name '*.apk' | grep -q .; then
+            echo "::error::out/ 里出现了非 APK 文件，拒绝上传"
+            find out -type f ! -name '*.apk'
+            exit 1
+          fi
+          if find . -path ./node_modules -prune -o \( -name '*.jks' -o -name '*.keystore' -o -name 'keystore.properties' \) -print | grep -q keystore; then
+            echo "::warn::工作区里存在 keystore 文件（仅存在于本次 runner，不会进 artifact）"
+          fi
+          echo "✓ 上传目录只有 APK"
 
       # 两个包各上传一次，在 Actions 页面就是两条独立产物
       - name: Upload debug APK
