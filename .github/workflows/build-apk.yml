@@ -1,12 +1,23 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 # Copyright (C) 2026 The 25-ji-code-de Team
 #
-# 云端把 Web 前端（Vite）打包进 Capacitor 的安卓壳，产出可直接安装的 APK。
+# 云端把 Web 前端（Vite）打包进 Capacitor 的安卓壳，一次同时产出
+# debug 与 release 两个 APK，两者使用同一套固定 keystore 签名
+# （所以签名不随构建机变化，两个包可以互相覆盖升级）。
 #
 # 触发：手动（Actions → Build APK → Run workflow）或推送到 main。
-# 产物：Actions 页面上的 artifact「sekai-stickers-debug-<sha>」，内含 app-debug.apk。
+# 产物：artifact「sekai-stickers-<sha>」，内含
+#   sekai-stickers-debug-<sha>.apk
+#   sekai-stickers-release-<sha>.apk
 #
-# 说明：Electron 没有 Android 运行时（Chromium+Node 桌面二进制无法装进 APK），
+# 需要的仓库 Secrets（Settings → Secrets and variables → Actions）：
+#   SEKAI_KEYSTORE_BASE64     keystore 的 base64（base64 -w0 sekai-release.jks）
+#   SEKAI_KEYSTORE_PASSWORD   keystore 口令
+#   SEKAI_KEY_ALIAS           key 别名
+#   SEKAI_KEY_PASSWORD        key 口令（PKCS12 下与 keystore 口令相同）
+#   SEKAI_KEYSTORE_FILENAME   落盘文件名，默认 sekai-release.jks（可选）
+#
+# 说明：Electron 没有 Android 运行时（Chromium+Node 桌面二进制装不进 APK），
 # 所以安卓端用 Capacitor（系统 WebView + 原生插件）承载同一份 Web 产物。
 
 name: Build APK
@@ -21,7 +32,7 @@ permissions:
 
 jobs:
   build:
-    name: Assemble debug APK
+    name: Assemble debug + release APK
     runs-on: ubuntu-latest
     timeout-minutes: 40
 
@@ -31,6 +42,11 @@ jobs:
       GIT_CONFIG_COUNT: "1"
       GIT_CONFIG_KEY_0: url.https://github.com/.insteadOf
       GIT_CONFIG_VALUE_0: ssh://git@github.com/
+      # 固定签名：keystore 文件由下面 decode 步骤写入并导出 SEKAI_KEYSTORE_FILE
+      SEKAI_KEYSTORE_FILENAME: ${{ secrets.SEKAI_KEYSTORE_FILENAME || 'sekai-release.jks' }}
+      SEKAI_KEYSTORE_PASSWORD: ${{ secrets.SEKAI_KEYSTORE_PASSWORD }}
+      SEKAI_KEY_ALIAS: ${{ secrets.SEKAI_KEY_ALIAS }}
+      SEKAI_KEY_PASSWORD: ${{ secrets.SEKAI_KEY_PASSWORD }}
 
     steps:
       - uses: actions/checkout@v5
@@ -69,26 +85,67 @@ jobs:
       # 已随仓库提交。品牌图改了就在本机跑 `node scripts/generate-android-icons.mjs`
       # 重新生成并提交（CI 不再依赖 Pillow）。
 
-      - name: Assemble debug APK
+      - name: Prepare fixed signing keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.SEKAI_KEYSTORE_BASE64 }}
+        run: |
+          set -euo pipefail
+          missing=0
+          for name in KEYSTORE_BASE64 SEKAI_KEYSTORE_PASSWORD SEKAI_KEY_ALIAS SEKAI_KEY_PASSWORD; do
+            if [ -z "${!name:-}" ]; then
+              echo "::error::缺少 secret ${name}（在仓库 Actions secrets 里配置后重跑）"
+              missing=1
+            fi
+          done
+          [ "$missing" -eq 0 ] || exit 1
+          KEYSTORE_PATH="$GITHUB_WORKSPACE/android/$SEKAI_KEYSTORE_FILENAME"
+          printf '%s' "$KEYSTORE_BASE64" | base64 -d > "$KEYSTORE_PATH"
+          chmod 600 "$KEYSTORE_PATH"
+          echo "SEKAI_KEYSTORE_FILE=$KEYSTORE_PATH" >> "$GITHUB_ENV"
+          echo "keystore 已写入 $KEYSTORE_PATH ($(stat -c %s "$KEYSTORE_PATH") bytes)"
+          keytool -list -keystore "$KEYSTORE_PATH" -storepass "$SEKAI_KEYSTORE_PASSWORD" -alias "$SEKAI_KEY_ALIAS" > /dev/null
+          echo "keystore 校验通过：alias=$SEKAI_KEY_ALIAS"
+
+      - name: Assemble debug + release APK
         run: |
           cd android
           chmod +x gradlew
-          ./gradlew --no-daemon assembleDebug
+          ./gradlew --no-daemon assembleDebug assembleRelease
 
-      - name: Collect APK
+      - name: Collect APKs
         id: collect
         run: |
+          set -euo pipefail
           SHA_SHORT=$(git rev-parse --short HEAD)
-          NAME="sekai-stickers-debug-${SHA_SHORT}"
           mkdir -p out
-          cp android/app/build/outputs/apk/debug/app-debug.apk "out/${NAME}.apk"
+          cp android/app/build/outputs/apk/debug/app-debug.apk \
+             "out/sekai-stickers-debug-${SHA_SHORT}.apk"
+          cp android/app/build/outputs/apk/release/app-release.apk \
+             "out/sekai-stickers-release-${SHA_SHORT}.apk"
           ls -lh out/
-          echo "name=${NAME}" >> "$GITHUB_OUTPUT"
+          echo "name=sekai-stickers-${SHA_SHORT}" >> "$GITHUB_OUTPUT"
 
-      - name: Upload APK artifact
+      - name: Verify both APKs share one signature
+        run: |
+          set -euo pipefail
+          APKSIGNER=$(ls "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -1)
+          for apk in out/*.apk; do
+            echo "== $apk =="
+            "$APKSIGNER" verify --print-certs "$apk" | grep -E "Signer #1 certificate (DN|SHA-256 digest)"
+          done
+          DIGESTS=$(for apk in out/*.apk; do "$APKSIGNER" verify --print-certs "$apk" | grep "SHA-256 digest" | awk '{print $NF}'; done | sort -u)
+          echo "$DIGESTS"
+          if [ "$(echo "$DIGESTS" | wc -l)" -ne 1 ]; then
+            echo "::error::debug 与 release 签名不一致"
+            exit 1
+          fi
+          echo "✓ debug 与 release 签名一致"
+
+      - name: Upload APK artifacts
         uses: actions/upload-artifact@v5
         with:
           name: ${{ steps.collect.outputs.name }}
+          # debug 与 release 两个包都上传
           path: out/*.apk
           if-no-files-found: error
           retention-days: 30

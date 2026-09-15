@@ -1,5 +1,38 @@
 apply plugin: 'com.android.application'
 
+/**
+ * 固定签名：debug 与 release 用同一套 keystore，签名不再随构建机变化，
+ * 两个包可以互相覆盖升级。
+ *
+ * 取值优先级：
+ *   1. 环境变量 SEKAI_KEYSTORE_FILE / SEKAI_KEYSTORE_PASSWORD /
+ *      SEKAI_KEY_ALIAS / SEKAI_KEY_PASSWORD（CI 从 GitHub Secrets 注入）
+ *   2. android/keystore.properties（本机开发用，已在 .gitignore 里）
+ *
+ * 两者都没有时：debug 回落到 Android 默认 debug keystore（会警告），
+ * release 不签名（assembleRelease 产出 app-release-unsigned.apk）。
+ */
+def keystorePropsFile = rootProject.file('keystore.properties')
+def keystoreProps = new Properties()
+if (keystorePropsFile.exists()) {
+    keystorePropsFile.withInputStream { keystoreProps.load(it) }
+}
+
+def envOrProp = { String envName, String propName ->
+    def fromEnv = System.getenv(envName)
+    return (fromEnv != null && !fromEnv.trim().isEmpty()) ? fromEnv : keystoreProps.getProperty(propName)
+}
+
+def keystorePath = envOrProp('SEKAI_KEYSTORE_FILE', 'storeFile')
+def releaseStorePassword = envOrProp('SEKAI_KEYSTORE_PASSWORD', 'storePassword')
+def releaseKeyAlias = envOrProp('SEKAI_KEY_ALIAS', 'keyAlias')
+def releaseKeyPassword = envOrProp('SEKAI_KEY_PASSWORD', 'keyPassword')
+def hasReleaseSigning = keystorePath != null && releaseStorePassword != null && releaseKeyAlias != null
+
+if (hasReleaseSigning && !file(keystorePath).exists()) {
+    throw new GradleException("固定签名 keystore 不存在：${keystorePath}（检查 SEKAI_KEYSTORE_FILE / storeFile 配置）")
+}
+
 android {
     namespace "de.sekai.stickers"
     compileSdk rootProject.ext.compileSdkVersion
@@ -16,12 +49,40 @@ android {
             ignoreAssetsPattern '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+
+    signingConfigs {
+        if (hasReleaseSigning) {
+            sekai {
+                storeFile file(keystorePath)
+                storePassword releaseStorePassword
+                keyAlias releaseKeyAlias
+                keyPassword releaseKeyPassword ?: releaseStorePassword
+                // v1 + v2 + v3，旧系统与 Android 7+ 都能验签
+                enableV1Signing true
+                enableV2Signing true
+                enableV3Signing true
+            }
+        }
+    }
+
     buildTypes {
+        debug {
+            if (hasReleaseSigning) {
+                signingConfig signingConfigs.sekai
+            }
+        }
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            if (hasReleaseSigning) {
+                signingConfig signingConfigs.sekai
+            }
         }
     }
+}
+
+if (!hasReleaseSigning) {
+    logger.warn('[signing] 未提供固定 keystore（环境变量或 android/keystore.properties），debug 使用默认 debug 签名，release 不签名')
 }
 
 repositories {
