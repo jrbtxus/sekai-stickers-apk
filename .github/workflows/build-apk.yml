@@ -131,14 +131,17 @@ jobs:
           if [ -z "$APKSIGNER" ]; then
             APKSIGNER=$(ls /usr/local/lib/android/sdk/build-tools/*/apksigner 2>/dev/null | sort -V | tail -1)
           fi
-          echo "ANDROID_HOME=${ANDROID_HOME:-<unset>}"
-          echo "apksigner=$APKSIGNER"
-          ls "$ANDROID_HOME"/build-tools 2>/dev/null || true
           if [ -z "$APKSIGNER" ]; then
             echo "::error::找不到 apksigner，无法校验签名"
             exit 1
           fi
+          echo "apksigner=$APKSIGNER"
+          "$APKSIGNER" version || true
 
+          # 注意：不同 build-tools 的 apksigner 输出格式不同
+          #   34.x: "Signer #1 certificate SHA-256 digest: <hex>"
+          #   37.x: "V3.0 Signer: certificate SHA-256 digest: <hex>"
+          # 所以这里只按字段名匹配，别绑定前缀。
           DIGESTS_FILE=$(mktemp)
           for apk in out/*.apk; do
             echo "== $apk =="
@@ -146,16 +149,13 @@ jobs:
             RAW=$("$APKSIGNER" verify --print-certs "$apk" 2>&1)
             RC=$?
             set -e
-            echo "exit=$RC"
-            echo "$RAW" | head -30
-            CERT=$(echo "$RAW" | grep -E "Signer #1 certificate (DN|SHA-256 digest)")
-            echo "$CERT"
-            DIGEST=$(echo "$CERT" | grep "SHA-256 digest" | awk '{print $NF}')
-            if [ -z "$DIGEST" ]; then
-              echo "::error::$apk 缺少签名（APK 路径或签名配置有问题）"
+            if [ "$RC" -ne 0 ]; then
+              echo "$RAW" | head -30
+              echo "::error::$apk 验签失败（apksigner exit=$RC）"
               exit 1
             fi
-            echo "$DIGEST" >> "$DIGESTS_FILE"
+            echo "$RAW" | grep -iE "signer.*certificate.*(DN|SHA-256)" | sort -u
+            echo "$RAW" | grep -iE "certificate SHA-256 digest:" | awk -F': ' '{print $NF}' | sort -u >> "$DIGESTS_FILE"
           done
 
           UNIQ=$(sort -u "$DIGESTS_FILE" | sed '/^$/d')
